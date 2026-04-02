@@ -29,6 +29,7 @@ class TeleVuer:
             self.img_width  = img_shape[1] // 2
         else:
             self.img_width  = img_shape[1]
+        self.aspect_ratio = self.img_width / self.img_height
         
         current_module_dir = Path(__file__).resolve().parent.parent.parent
         if cert_file is None:
@@ -220,13 +221,12 @@ class TeleVuer:
 
         while True:
             display_image = cv2.cvtColor(self.img_array, cv2.COLOR_BGR2RGB)
-            # aspect_ratio = self.img_width / self.img_height
             session.upsert(
                 [
                     ImageBackground(
                         display_image[:, :self.img_width],
-                        aspect=1.778,
-                        height=1,
+                        aspect=self.aspect_ratio,
+                        height=0.6,
                         distanceToCamera=1,
                         # The underlying rendering engine supported a layer binary bitmask for both objects and the camera. 
                         # Below we set the two image planes, left and right, to layers=1 and layers=2. 
@@ -239,8 +239,8 @@ class TeleVuer:
                     ),
                     ImageBackground(
                         display_image[:, self.img_width:],
-                        aspect=1.778,
-                        height=1,
+                        aspect=self.aspect_ratio,
+                        height=0.6,
                         distanceToCamera=1,
                         layers=2,
                         format="jpeg",
@@ -283,8 +283,8 @@ class TeleVuer:
                 [
                     ImageBackground(
                         display_image,
-                        aspect=1.778,
-                        height=1,
+                        aspect=self.aspect_ratio,
+                        height=0.6,
                         distanceToCamera=1,
                         format="jpeg",
                         quality=50,
@@ -323,7 +323,7 @@ class TeleVuer:
                 src="https://10.0.7.49:8080/offer",
                 iceServer={},
                 key="webrtc",
-                aspect=1.778,
+                aspect=self.aspect_ratio,
                 height = 7,
             ),
             to="bgChildren",

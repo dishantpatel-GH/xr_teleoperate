@@ -334,7 +334,8 @@ class ImageServer:
                             logger_mp.error("[Image Server] Head camera frame read is error.")
                             break
                         color_image, depth_image = result
-                        # Order: Depth first (colorized for display), then RGB
+                        # Order: RGB first, then Depth (colorized for display)
+                        head_frames.append(color_image)
                         if depth_image is not None:
                             raw_depth_image = depth_image.copy()  # Keep raw 16-bit depth
                             depth_colormap = _depth_to_display(
@@ -344,7 +345,6 @@ class ImageServer:
                                 style=self.depth_style,
                             )
                             head_frames.append(depth_colormap)
-                        head_frames.append(color_image)
                 if not head_frames:
                     break
                 head_color = cv2.hconcat(head_frames)
@@ -415,7 +415,7 @@ if __name__ == "__main__":
     parser.add_argument('--depth-far', type=int, default=4000, help='Depth far plane (mm)')
     parser.add_argument('--depth-style', type=str, default='turbo', choices=['3ddp', 'turbo', 'jet'],
                         help='3ddp=3D-Diffusion-Policy style (u,v,depth as RGB), turbo/jet=colormap')
-    parser.add_argument('--resolution', type=str, default='640x480', help='Width x height')
+    parser.add_argument('--resolution', type=str, default='424x240', help='Width x height')
     args = parser.parse_args()
     
     # Auto-detect RealSense

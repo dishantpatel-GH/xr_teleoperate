@@ -216,26 +216,34 @@ class ImageClient:
                         expected_height = self.wrist_img_shape[0]
                 
                 # Validate height (should be same for both cameras if both enabled)
-                if self.tv_enable_shm or self.wrist_enable_shm:
-                    if recv_height != expected_height:
-                        logger_mp.warning(f"[Image Client] Height mismatch: received {recv_height}, expected {expected_height}")
-                        continue
+                # if self.tv_enable_shm or self.wrist_enable_shm:
+                #     if recv_height != expected_height:
+                #         logger_mp.warning(f"[Image Client] Height mismatch: received {recv_height}, expected {expected_height}")
+                #         continue
                     
-                    if recv_width < required_width:
-                        logger_mp.warning(f"[Image Client] Width too small: received {recv_width}, need at least {required_width} (TV: {self.tv_img_shape[1] if self.tv_enable_shm else 0}, Wrist: {self.wrist_img_shape[1] if self.wrist_enable_shm else 0})")
-                        continue
+                #     if recv_width < required_width:
+                #         logger_mp.warning(f"[Image Client] Width too small: received {recv_width}, need at least {required_width} (TV: {self.tv_img_shape[1] if self.tv_enable_shm else 0}, Wrist: {self.wrist_img_shape[1] if self.wrist_enable_shm else 0})")
+                #         continue
                 
                 # Extract camera images from concatenated image
                 if self.tv_enable_shm:
                     tv_width = self.tv_img_shape[1]
-                    np.copyto(self.tv_img_array, np.array(current_image[:, :tv_width]))
+                    tv_height = self.tv_img_shape[0]
+                    tv_region = current_image[:, :tv_width]
+                    if tv_region.shape[0] != tv_height:
+                        tv_region = cv2.resize(tv_region, (tv_width, tv_height))
+                    np.copyto(self.tv_img_array, tv_region)
                     if depth_log_counter % 30 == 0:
                         logger_mp.info(f"[Image Client] Frame received: {recv_width}x{recv_height}, TV portion: {tv_width}px")
                     depth_log_counter += 1
                 
                 if self.wrist_enable_shm:
                     wrist_width = self.wrist_img_shape[1]
-                    np.copyto(self.wrist_img_array, np.array(current_image[:, -wrist_width:]))
+                    wrist_height = self.wrist_img_shape[0]
+                    wrist_region = current_image[:, -wrist_width:]
+                    if wrist_region.shape[0] != wrist_height:
+                        wrist_region = cv2.resize(wrist_region, (wrist_width, wrist_height))
+                    np.copyto(self.wrist_img_array, wrist_region)
                 
                 if self._image_show:
                     height, width = current_image.shape[:2]

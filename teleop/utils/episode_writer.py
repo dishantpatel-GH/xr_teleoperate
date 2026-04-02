@@ -83,6 +83,10 @@ class EpisodeWriter():
             }
 
  
+    def set_tactile_names(self, tactile_names):
+        """Set tactile sensor field names per end-effector (e.g. left_ee, right_ee)."""
+        self.info["tactile_names"] = tactile_names
+
     def create_episode(self):
         """
         Create a new episode.
@@ -170,10 +174,10 @@ class EpisodeWriter():
                     logger_mp.info(f"Failed to save color image.")
                 item_data['colors'][color_key] = os.path.join('colors', color_name)
 
-        # Save depths
+        # Save depths (16-bit PNG to preserve raw values)
         if depths:
             for idx_depth, (depth_key, depth) in enumerate(depths.items()):
-                depth_name = f'{str(idx).zfill(6)}_{depth_key}.jpg'
+                depth_name = f'{str(idx).zfill(6)}_{depth_key}.png'
                 if not cv2.imwrite(os.path.join(self.depth_dir, depth_name), depth):
                     logger_mp.info(f"Failed to save depth image.")
                 item_data['depths'][depth_key] = os.path.join('depths', depth_name)

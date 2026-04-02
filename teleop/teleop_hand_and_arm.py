@@ -121,11 +121,11 @@ if __name__ == '__main__':
             img_config = {
                 'fps': 30,
                 'head_camera_type': 'opencv',
-                'head_camera_image_shape': [480, 640],  # Head camera resolution
+                'head_camera_image_shape': [480, 848],  # Head camera resolution (RGB 424 + Depth 424 = 848 wide)
                 'head_camera_id_numbers': [4],
-                #'wrist_camera_type': 'opencv',
-                #'wrist_camera_image_shape': [480, 640],  # Wrist camera resolution
-                #'wrist_camera_id_numbers': [2, 4],
+                'wrist_camera_type': 'opencv',
+                'wrist_camera_image_shape': [480, 640],  # Right wrist camera resolution (single camera)
+                'wrist_camera_id_numbers': [2],
             }
 
 
@@ -136,8 +136,10 @@ if __name__ == '__main__':
             BINOCULAR = False
         if 'wrist_camera_type' in img_config:
             WRIST = True
+            num_wrist_cams = len(img_config['wrist_camera_id_numbers'])
         else:
             WRIST = False
+            num_wrist_cams = 0
         
         if BINOCULAR and not (img_config['head_camera_image_shape'][1] / img_config['head_camera_image_shape'][0] > ASPECT_RATIO_THRESHOLD):
             tv_img_shape = (img_config['head_camera_image_shape'][0], img_config['head_camera_image_shape'][1] * 2, 3)
@@ -154,7 +156,7 @@ if __name__ == '__main__':
             img_client = ImageClient(tv_img_shape = tv_img_shape, tv_img_shm_name = tv_img_shm.name, 
                                     wrist_img_shape = wrist_img_shape, wrist_img_shm_name = wrist_img_shm.name, server_address="127.0.0.1")
         elif WRIST and not args.sim:
-            wrist_img_shape = (img_config['wrist_camera_image_shape'][0], img_config['wrist_camera_image_shape'][1] * 2, 3)
+            wrist_img_shape = (img_config['wrist_camera_image_shape'][0], img_config['wrist_camera_image_shape'][1] * num_wrist_cams, 3)
             wrist_img_shm = shared_memory.SharedMemory(create = True, size = np.prod(wrist_img_shape) * np.uint8().itemsize)
             wrist_img_array = np.ndarray(wrist_img_shape, dtype = np.uint8, buffer = wrist_img_shm.buf)
             img_client = ImageClient(tv_img_shape = tv_img_shape, tv_img_shm_name = tv_img_shm.name, 
@@ -262,6 +264,12 @@ if __name__ == '__main__':
         elif args.record and not args.headless:
             recorder = EpisodeWriter(task_dir = args.task_dir + args.task_name, task_goal = args.task_desc, frequency = args.frequency, rerun_log = True)
 
+        if args.record and args.ee == "inspire_ftp":
+            from teleop.robot_control.robot_hand_inspire_ftp import TOUCH_FIELD_NAMES
+            recorder.set_tactile_names({
+                "left_ee": TOUCH_FIELD_NAMES,
+                "right_ee": TOUCH_FIELD_NAMES,
+            })
 
         logger_mp.info("Please enter the start signal (enter 'r' to start the subsequent program)")
         while not START and not STOP:
@@ -406,13 +414,17 @@ if __name__ == '__main__':
                         colors[f"color_{0}"] = current_tv_image[:, :tv_img_shape[1]//2]
                         colors[f"color_{1}"] = current_tv_image[:, tv_img_shape[1]//2:]
                         if WRIST:
-                            colors[f"color_{2}"] = current_wrist_image[:, :wrist_img_shape[1]//2]
-                            colors[f"color_{3}"] = current_wrist_image[:, wrist_img_shape[1]//2:]
+                            per_wrist_w = img_config['wrist_camera_image_shape'][1]
+                            for wi in range(num_wrist_cams):
+                                colors[f"color_{2 + wi}"] = current_wrist_image[:, wi * per_wrist_w:(wi + 1) * per_wrist_w]
                     else:
                         colors[f"color_{0}"] = current_tv_image
                         if WRIST:
-                            colors[f"color_{1}"] = current_wrist_image[:, :wrist_img_shape[1]//2]
-                            colors[f"color_{2}"] = current_wrist_image[:, wrist_img_shape[1]//2:]
+                            per_wrist_w = img_config['wrist_camera_image_shape'][1]
+                            for wi in range(num_wrist_cams):
+                                colors[f"color_{1 + wi}"] = current_wrist_image[:, wi * per_wrist_w:(wi + 1) * per_wrist_w]
+                    if img_client.depth_raw is not None:
+                        depths["depth_0"] = img_client.depth_raw
                     states = {
                         "left_arm": {                                                                    
                             "qpos":   left_arm_state.tolist(),    # numpy.array -> list
@@ -463,11 +475,15 @@ if __name__ == '__main__':
                             "qpos": current_body_action,
                         }, 
                     }
+                    tactiles = None
+                    if args.ee == "inspire_ftp":
+                        tactiles = hand_ctrl.get_tactile_data()
+
                     if args.sim:
                         sim_state = sim_state_subscriber.read_data()            
-                        recorder.add_item(colors=colors, depths=depths, states=states, actions=actions, sim_state=sim_state)
+                        recorder.add_item(colors=colors, depths=depths, states=states, actions=actions, tactiles=tactiles, sim_state=sim_state)
                     else:
-                        recorder.add_item(colors=colors, depths=depths, states=states, actions=actions)
+                        recorder.add_item(colors=colors, depths=depths, states=states, actions=actions, tactiles=tactiles)
 
             current_time = time.time()
             time_elapsed = current_time - start_time
@@ -477,24 +493,49 @@ if __name__ == '__main__':
 
     except KeyboardInterrupt:
         logger_mp.info("KeyboardInterrupt, exiting program...")
+    except Exception as e:
+        logger_mp.error(f"Unexpected error: {e}")
+        import traceback
+        traceback.print_exc()
     finally:
-        arm_ctrl.ctrl_dual_arm_go_home()
+        try:
+            arm_ctrl.ctrl_dual_arm_go_home()
+        except NameError:
+            pass
 
         if args.ipc:
-            ipc_server.stop()
+            try:
+                ipc_server.stop()
+            except NameError:
+                pass
         else:
             stop_listening()
-            listen_keyboard_thread.join()
+            try:
+                listen_keyboard_thread.join()
+            except NameError:
+                pass
 
         if args.sim:
-            sim_state_subscriber.stop_subscribe()
-        tv_img_shm.close()
-        tv_img_shm.unlink()
+            try:
+                sim_state_subscriber.stop_subscribe()
+            except NameError:
+                pass
+        try:
+            tv_img_shm.close()
+            tv_img_shm.unlink()
+        except NameError:
+            pass
         if WRIST:
-            wrist_img_shm.close()
-            wrist_img_shm.unlink()
+            try:
+                wrist_img_shm.close()
+                wrist_img_shm.unlink()
+            except NameError:
+                pass
 
-        if args.record:
-            recorder.close()
+        try:
+            if args.record:
+                recorder.close()
+        except NameError:
+            pass
         logger_mp.info("Finally, exiting program.")
         exit(0)
